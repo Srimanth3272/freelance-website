@@ -21,7 +21,8 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
     if (phone.length >= 10) {
       setLoading(true);
       try {
-        const res = await fetch('http://localhost:5000/api/auth/login/phone', {
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+        const res = await fetch(`${API_BASE}/auth/login/phone`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone })
@@ -62,7 +63,8 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
       const enteredOtp = newOtp.join('');
       setLoading(true);
       try {
-        const res = await fetch('http://localhost:5000/api/auth/login/phone', {
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+        const res = await fetch(`${API_BASE}/auth/login/phone`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone, otp: enteredOtp })
