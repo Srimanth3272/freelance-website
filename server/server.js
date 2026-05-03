@@ -7,20 +7,17 @@ const multer = require('multer');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// Middleware - Allow all origins for public API
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
-    // Allow localhost for development
-    if (origin.includes('localhost') || origin.includes('127.0.0.1')) return callback(null, true);
-    // Allow all Vercel deployments
-    if (origin.endsWith('.vercel.app')) return callback(null, true);
-    // Block everything else
-    callback(new Error('Not allowed by CORS'));
-  },
+  origin: true,
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// Handle preflight requests explicitly
+app.options('*', cors());
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -70,13 +67,6 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'KaamWala API', version: '1.0.0', timestamp: new Date().toISOString() });
 });
 
-// Error handling
-app.use((err, req, res, next) => {
-  console.error('❌ Error:', err.message);
-  if (err instanceof multer.MulterError) return res.status(400).json({ error: `Upload error: ${err.message}` });
-  res.status(500).json({ error: err.message || 'Internal server error' });
-});
-
 // Start server with async DB init
 async function start() {
   const { initializeDatabase } = require('./db');
@@ -88,6 +78,13 @@ async function start() {
   app.use('/api/bookings', require('./routes/bookings'));
   app.use('/api/admin', require('./routes/admin'));
   app.use('/api/ai', require('./routes/ai'));
+
+  // Error handling - MUST be after all routes
+  app.use((err, req, res, next) => {
+    console.error('❌ Error:', err.message);
+    if (err instanceof multer.MulterError) return res.status(400).json({ error: `Upload error: ${err.message}` });
+    res.status(500).json({ error: err.message || 'Internal server error' });
+  });
 
   app.listen(PORT, () => {
     console.log(`
