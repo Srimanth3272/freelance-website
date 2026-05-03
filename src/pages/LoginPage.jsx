@@ -27,7 +27,7 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
       setOtpError('');
       setOtp(['', '', '', '', '', '']);
       try {
-        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://freelance-website-4b2g.onrender.com/api';
         const res = await fetch(`${API_BASE}/auth/login/phone`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -70,7 +70,7 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
   const autoVerifyOtp = async (otpString) => {
     setLoading(true);
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://freelance-website-4b2g.onrender.com/api';
       const res = await fetch(`${API_BASE}/auth/login/phone`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -143,7 +143,7 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
       setLoading(true);
       try {
         // Authenticate with backend using the server's admin credentials to get JWT token
-        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://freelance-website-4b2g.onrender.com/api';
         const res = await fetch(`${API_BASE}/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
