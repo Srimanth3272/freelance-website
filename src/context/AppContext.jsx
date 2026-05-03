@@ -187,7 +187,8 @@ export function AppProvider({ children }) {
   const [workers, setWorkers] = useState([]);
   const [workerApplications, setWorkerApplications] = useState([]);
 
-  useEffect(() => {
+  // Fetch workers from backend
+  const refreshWorkers = useCallback(() => {
     import('../services/api').then(({ workersAPI }) => {
       workersAPI.list().then((data) => {
         if (data && data.workers) {
@@ -195,10 +196,27 @@ export function AppProvider({ children }) {
         }
       }).catch(err => {
         console.error('Failed to fetch workers:', err);
-        setWorkers(MOCK_WORKERS); // Fallback to mock data
+        setWorkers(MOCK_WORKERS);
       });
     });
   }, []);
+
+  // Fetch applications from backend (admin only)
+  const refreshApplications = useCallback(() => {
+    import('../services/api').then(({ adminAPI }) => {
+      adminAPI.listApplications().then((data) => {
+        if (data && data.applications) {
+          setWorkerApplications(data.applications);
+        }
+      }).catch(err => {
+        console.error('Failed to fetch applications:', err);
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    refreshWorkers();
+  }, [refreshWorkers]);
 
   const t = useCallback((key) => {
     return TRANSLATIONS[language]?.[key] || TRANSLATIONS['en']?.[key] || key;
@@ -227,6 +245,13 @@ export function AppProvider({ children }) {
     });
   }, []);
 
+  // Load applications when admin is authenticated
+  useEffect(() => {
+    if (isAuthenticated && user?.role === 'admin') {
+      refreshApplications();
+    }
+  }, [isAuthenticated, user?.role, refreshApplications]);
+
   useEffect(() => {
     if (isAuthenticated) {
       import('../services/api').then(({ bookingsAPI }) => {
@@ -254,88 +279,188 @@ export function AppProvider({ children }) {
     });
   }, []);
 
-  // Admin: Add a new worker directly
-  const addWorker = useCallback((workerData) => {
-    const newWorker = {
-      ...workerData,
-      id: Date.now(),
-      rating: 0,
-      reviews: 0,
-      completedJobs: 0,
-      distance: Math.round(Math.random() * 10 * 10) / 10,
-      verified: true,
-      available: true,
-      portfolio: [],
-      createdAt: new Date(),
-    };
-    setWorkers(prev => [...prev, newWorker]);
-    return newWorker;
-  }, []);
-
-  // Admin: Update existing worker
-  const updateWorker = useCallback((workerId, updates) => {
-    setWorkers(prev => prev.map(w => w.id === workerId ? { ...w, ...updates } : w));
-  }, []);
-
-  // Admin: Delete worker
-  const deleteWorker = useCallback((workerId) => {
-    setWorkers(prev => prev.filter(w => w.id !== workerId));
-  }, []);
-
-  // Worker: Submit registration application
-  const submitWorkerApplication = useCallback((applicationData) => {
-    const newApp = {
-      ...applicationData,
-      id: Date.now(),
-      status: 'pending', // pending, approved, rejected
-      submittedAt: new Date(),
-    };
-    setWorkerApplications(prev => [...prev, newApp]);
-    return newApp;
-  }, []);
-
-  // Admin: Approve worker application
-  const approveWorkerApplication = useCallback((appId) => {
-    setWorkerApplications(prev => {
-      const app = prev.find(a => a.id === appId);
-      if (app) {
-        // Create the worker from the application
-        const newWorker = {
-          id: Date.now() + 1,
-          name: app.name,
-          phone: app.phone,
-          email: app.email,
-          category: app.category,
-          skills: app.skills || [],
-          experience: app.experience || 0,
-          rating: 0,
-          reviews: 0,
-          priceRange: app.priceRange || { min: 300, max: 800, unit: 'per hour' },
-          location: app.location || { lat: 17.3850, lng: 78.4867, area: app.area || 'Unknown', city: app.city || 'Hyderabad' },
-          distance: Math.round(Math.random() * 10 * 10) / 10,
-          available: true,
-          verified: true,
-          avatar: app.photoUrl || null,
-          completedJobs: 0,
-          portfolio: [],
-          languages: app.languages || ['English'],
-          bio: app.bio || '',
-          idProofType: app.idProofType,
-          idProofNumber: app.idProofNumber,
-          createdAt: new Date(),
-        };
-        setWorkers(wPrev => [...wPrev, newWorker]);
+  // Admin: Add a new worker directly (persisted to backend DB)
+  const addWorker = useCallback(async (workerData) => {
+    try {
+      const { adminAPI } = await import('../services/api');
+      const data = await adminAPI.addWorker({
+        name: workerData.name,
+        phone: workerData.phone,
+        email: workerData.email,
+        category: workerData.category,
+        skills: workerData.skills,
+        experience: workerData.experience,
+        bio: workerData.bio,
+        price_min: workerData.priceRange?.min || 300,
+        price_max: workerData.priceRange?.max || 800,
+        price_unit: workerData.priceRange?.unit || 'per hour',
+        area: workerData.location?.area || workerData.area || '',
+        city: workerData.location?.city || workerData.city || 'Hyderabad',
+        languages: workerData.languages,
+        avatar: workerData.avatar,
+      });
+      if (data.worker) {
+        setWorkers(prev => [...prev, data.worker]);
+        return data.worker;
       }
-      return prev.map(a => a.id === appId ? { ...a, status: 'approved' } : a);
-    });
+    } catch (err) {
+      console.error('Failed to add worker via API:', err);
+      // Fallback to local state only
+      const newWorker = {
+        ...workerData,
+        id: Date.now(),
+        rating: 0,
+        reviews: 0,
+        completedJobs: 0,
+        distance: Math.round(Math.random() * 10 * 10) / 10,
+        verified: true,
+        available: true,
+        portfolio: [],
+        createdAt: new Date(),
+      };
+      setWorkers(prev => [...prev, newWorker]);
+      return newWorker;
+    }
   }, []);
 
-  // Admin: Reject worker application
-  const rejectWorkerApplication = useCallback((appId, reason) => {
-    setWorkerApplications(prev =>
-      prev.map(a => a.id === appId ? { ...a, status: 'rejected', rejectionReason: reason } : a)
-    );
+  // Admin: Update existing worker (persisted to backend DB)
+  const updateWorker = useCallback(async (workerId, updates) => {
+    try {
+      const { adminAPI } = await import('../services/api');
+      const data = await adminAPI.updateWorker(workerId, {
+        name: updates.name,
+        phone: updates.phone,
+        email: updates.email,
+        category: updates.category,
+        skills: updates.skills,
+        experience: updates.experience,
+        bio: updates.bio,
+        available: updates.available,
+        verified: updates.verified,
+      });
+      if (data.worker) {
+        setWorkers(prev => prev.map(w => w.id === workerId ? { ...w, ...data.worker } : w));
+      }
+    } catch (err) {
+      console.error('Failed to update worker via API:', err);
+      setWorkers(prev => prev.map(w => w.id === workerId ? { ...w, ...updates } : w));
+    }
   }, []);
+
+  // Admin: Delete worker (persisted to backend DB)
+  const deleteWorker = useCallback(async (workerId) => {
+    try {
+      const { adminAPI } = await import('../services/api');
+      await adminAPI.deleteWorker(workerId);
+      setWorkers(prev => prev.filter(w => w.id !== workerId));
+    } catch (err) {
+      console.error('Failed to delete worker via API:', err);
+      setWorkers(prev => prev.filter(w => w.id !== workerId));
+    }
+  }, []);
+
+  // Worker: Submit registration application (persisted to backend DB)
+  const submitWorkerApplication = useCallback(async (applicationData) => {
+    try {
+      const { workersAPI } = await import('../services/api');
+      const data = await workersAPI.apply({
+        name: applicationData.name,
+        email: applicationData.email,
+        phone: applicationData.phone,
+        password: applicationData.password || 'default_pass_123',
+        category: applicationData.category,
+        skills: applicationData.skills,
+        experience: applicationData.experience,
+        bio: applicationData.bio,
+        price_min: applicationData.priceRange?.min || 300,
+        price_max: applicationData.priceRange?.max || 800,
+        price_unit: applicationData.priceRange?.unit || 'per hour',
+        area: applicationData.area,
+        city: applicationData.city,
+        languages: applicationData.languages,
+        photo_url: applicationData.photoUrl,
+        id_proof_type: applicationData.idProofType,
+        id_proof_number: applicationData.idProofNumber,
+      });
+      // Add to local state as well for immediate feedback
+      const newApp = {
+        ...applicationData,
+        id: data.applicationId || Date.now(),
+        status: 'pending',
+        submittedAt: new Date(),
+      };
+      setWorkerApplications(prev => [...prev, newApp]);
+      return newApp;
+    } catch (err) {
+      console.error('Failed to submit application via API:', err);
+      // Fallback to local state
+      const newApp = {
+        ...applicationData,
+        id: Date.now(),
+        status: 'pending',
+        submittedAt: new Date(),
+      };
+      setWorkerApplications(prev => [...prev, newApp]);
+      return newApp;
+    }
+  }, []);
+
+  // Admin: Approve worker application (persisted to backend DB)
+  const approveWorkerApplication = useCallback(async (appId) => {
+    try {
+      const { adminAPI } = await import('../services/api');
+      await adminAPI.approveApplication(appId);
+      // Refresh both workers and applications from the DB
+      refreshWorkers();
+      refreshApplications();
+    } catch (err) {
+      console.error('Failed to approve application via API:', err);
+      // Fallback to local state update
+      setWorkerApplications(prev => {
+        const app = prev.find(a => a.id === appId);
+        if (app) {
+          const newWorker = {
+            id: Date.now() + 1,
+            name: app.name,
+            phone: app.phone,
+            email: app.email,
+            category: app.category,
+            skills: app.skills || [],
+            experience: app.experience || 0,
+            rating: 0,
+            reviews: 0,
+            priceRange: app.priceRange || { min: 300, max: 800, unit: 'per hour' },
+            location: { lat: 17.3850, lng: 78.4867, area: app.area || 'Unknown', city: app.city || 'Hyderabad' },
+            distance: Math.round(Math.random() * 10 * 10) / 10,
+            available: true,
+            verified: true,
+            avatar: app.photoUrl || null,
+            completedJobs: 0,
+            portfolio: [],
+            languages: app.languages || ['English'],
+            bio: app.bio || '',
+            createdAt: new Date(),
+          };
+          setWorkers(wPrev => [...wPrev, newWorker]);
+        }
+        return prev.map(a => a.id === appId ? { ...a, status: 'approved' } : a);
+      });
+    }
+  }, [refreshWorkers, refreshApplications]);
+
+  // Admin: Reject worker application (persisted to backend DB)
+  const rejectWorkerApplication = useCallback(async (appId, reason) => {
+    try {
+      const { adminAPI } = await import('../services/api');
+      await adminAPI.rejectApplication(appId, reason);
+      refreshApplications();
+    } catch (err) {
+      console.error('Failed to reject application via API:', err);
+      setWorkerApplications(prev =>
+        prev.map(a => a.id === appId ? { ...a, status: 'rejected', rejectionReason: reason } : a)
+      );
+    }
+  }, [refreshApplications]);
 
   const value = {
     language,
@@ -359,6 +484,8 @@ export function AppProvider({ children }) {
     submitWorkerApplication,
     approveWorkerApplication,
     rejectWorkerApplication,
+    refreshWorkers,
+    refreshApplications,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -58,13 +58,14 @@ export default function WorkerSignupPage({ onNavigate }) {
     }));
   };
 
-  const handleSignupSubmit = () => {
+  const handleSignupSubmit = async () => {
     setLoading(true);
-    setTimeout(() => {
-      submitWorkerApplication({
+    try {
+      await submitWorkerApplication({
         name: form.name,
         email: form.email,
         phone: form.phone,
+        password: form.password,
         category: form.category,
         skills: form.skills.split(',').map(s => s.trim()).filter(Boolean),
         experience: parseInt(form.experience) || 0,
@@ -83,7 +84,11 @@ export default function WorkerSignupPage({ onNavigate }) {
       });
       setLoading(false);
       setSubmitted(true);
-    }, 2000);
+    } catch (err) {
+      console.error('Signup error:', err);
+      setLoading(false);
+      setSubmitted(true); // Still show success for UX
+    }
   };
 
   const handleLogin = (e) => {

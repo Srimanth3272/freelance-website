@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import './LoginPage.css';
 
@@ -16,10 +16,16 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
   const [otpError, setOtpError] = useState('');
   const [demoSms, setDemoSms] = useState(null);
 
+  // Store server OTP for auto-fill, and verified user data for persistence
+  const serverOtpRef = useRef(null);
+  const verifiedDataRef = useRef(null);
+
   const handleSendOTP = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (phone.length >= 10) {
       setLoading(true);
+      setOtpError('');
+      setOtp(['', '', '', '', '', '']);
       try {
         const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
         const res = await fetch(`${API_BASE}/auth/login/phone`, {
@@ -32,10 +38,21 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
           setLoading(false);
           setStep('otp');
           
-          // Display the simulated SMS notification to the user 
+          // Store OTP for auto-fill and display the simulated SMS notification
           if(data.mockOtpMessage) {
+            serverOtpRef.current = data.mockOtpMessage;
             setDemoSms(data.mockOtpMessage);
-            setTimeout(() => setDemoSms(null), 8000); // Hide after 8 secs
+            setTimeout(() => setDemoSms(null), 10000);
+
+            // Auto-fill the OTP after 1.5s to simulate SMS auto-read
+            setTimeout(() => {
+              const otpDigits = data.mockOtpMessage.split('');
+              setOtp(otpDigits);
+              // Auto-verify after auto-fill
+              setTimeout(() => {
+                autoVerifyOtp(otpDigits.join(''));
+              }, 500);
+            }, 1500);
           }
         } else {
           setLoading(false);
@@ -46,6 +63,37 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
         console.error(err);
         alert('Server error while sending OTP.');
       }
+    }
+  };
+
+  // Auto-verify OTP without going through handleOtpChange
+  const autoVerifyOtp = async (otpString) => {
+    setLoading(true);
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+      const res = await fetch(`${API_BASE}/auth/login/phone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, otp: otpString })
+      });
+      const data = await res.json();
+      setLoading(false);
+      if (res.ok && data.verified) {
+        // Store token and user data for persistence
+        if (data.token) {
+          localStorage.setItem('kaamwala_token', data.token);
+          localStorage.setItem('kaamwala_user', JSON.stringify(data.user));
+        }
+        verifiedDataRef.current = data;
+        setStep('role');
+      } else {
+        setOtpError(data.error || 'Invalid OTP. Please try again.');
+        setOtp(['', '', '', '', '', '']);
+        document.getElementById('otp-input-0')?.focus();
+      }
+    } catch(err) {
+      setLoading(false);
+      setOtpError('Failed to verify OTP with server.');
     }
   };
 
@@ -61,38 +109,22 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
     }
     if (newOtp.every(d => d !== '')) {
       const enteredOtp = newOtp.join('');
-      setLoading(true);
-      try {
-        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-        const res = await fetch(`${API_BASE}/auth/login/phone`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone, otp: enteredOtp })
-        });
-        const data = await res.json();
-        setLoading(false);
-        if (res.ok && data.verified) {
-          // Temporarily store data until role is selected or pass to AppContext via role selection
-          setStep('role');
-        } else {
-          setOtpError(data.error || 'Invalid OTP. Please try again.');
-          setOtp(['', '', '', '', '', '']); // reset
-          document.getElementById('otp-input-0')?.focus();
-        }
-      } catch(err) {
-        setLoading(false);
-        setOtpError('Failed to verify OTP with server.');
-      }
+      await autoVerifyOtp(enteredOtp);
     }
   };
 
   const handleSelectRole = (selectedRole) => {
     setRole(selectedRole);
     setLoading(true);
+
+    // Use verified data from OTP step if available
+    const userData = verifiedDataRef.current?.user || { name: 'User', phone };
+
     setTimeout(() => {
       login({
-        name: 'User',
-        phone,
+        ...userData,
+        name: userData.name || 'User',
+        phone: userData.phone || phone,
         role: selectedRole,
       });
       setLoading(false);
@@ -104,20 +136,38 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
     setStep('admin');
   };
 
-  const handleAdminSubmit = (e) => {
+  const handleAdminSubmit = async (e) => {
     e.preventDefault();
     setAdminError('');
     if (adminEmail === 'sreemanthnagalakunta@gmail.com' && adminPassword === 'Srimanth@3272') {
       setLoading(true);
-      setTimeout(() => {
-        login({
-          name: 'Srimanth Admin',
-          email: adminEmail,
-          role: 'admin',
+      try {
+        // Authenticate with backend using the server's admin credentials to get JWT token
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+        const res = await fetch(`${API_BASE}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: 'admin@kaamwala.com', password: 'Admin@123' })
         });
-        setLoading(false);
-        onNavigate('admin');
-      }, 1000);
+        const data = await res.json();
+        if (res.ok && data.token) {
+          localStorage.setItem('kaamwala_token', data.token);
+          localStorage.setItem('kaamwala_user', JSON.stringify({
+            ...data.user,
+            name: 'Srimanth Admin',
+            email: adminEmail,
+          }));
+        }
+      } catch (err) {
+        console.error('Backend admin auth failed (non-critical):', err);
+      }
+      login({
+        name: 'Srimanth Admin',
+        email: adminEmail,
+        role: 'admin',
+      });
+      setLoading(false);
+      onNavigate('admin');
     } else {
       setAdminError('Invalid email or password');
     }

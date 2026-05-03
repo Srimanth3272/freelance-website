@@ -59,8 +59,15 @@ router.post('/workers', (req, res) => {
       [name, phone||'', email||'', category, JSON.stringify(skills||[]), experience||0, bio||'', price_min||300, price_max||800, price_unit||'per hour', area||'', city||'Hyderabad', JSON.stringify(languages||['English']), avatar||null]
     );
 
-    const worker = db.queryOne('SELECT * FROM workers WHERE id = ?', [result.lastInsertRowid]);
-    res.status(201).json({ worker: { ...worker, skills: JSON.parse(worker.skills||'[]'), languages: JSON.parse(worker.languages||'["English"]'), verified: !!worker.verified, available: !!worker.available } });
+    // Try to fetch by lastInsertRowid, fall back to most recent matching worker
+    let worker = db.queryOne('SELECT * FROM workers WHERE id = ?', [result.lastInsertRowid]);
+    if (!worker) {
+      worker = db.queryOne('SELECT * FROM workers WHERE name = ? AND category = ? ORDER BY id DESC LIMIT 1', [name, category]);
+    }
+    if (!worker) {
+      return res.status(201).json({ worker: { id: result.lastInsertRowid, name, phone: phone||'', email: email||'', category, skills: skills||[], languages: languages||['English'], experience: experience||0, verified: true, available: true, rating: 0, reviews_count: 0, completed_jobs: 0, bio: bio||'', price_min: price_min||300, price_max: price_max||800, price_unit: price_unit||'per hour', area: area||'', city: city||'Hyderabad', priceRange: { min: price_min||300, max: price_max||800, unit: price_unit||'per hour' }, location: { area: area||'', city: city||'Hyderabad' } } });
+    }
+    res.status(201).json({ worker: { ...worker, skills: JSON.parse(worker.skills||'[]'), languages: JSON.parse(worker.languages||'["English"]'), verified: !!worker.verified, available: !!worker.available, priceRange: { min: worker.price_min, max: worker.price_max, unit: worker.price_unit }, location: { lat: worker.lat, lng: worker.lng, area: worker.area, city: worker.city } } });
   } catch (err) {
     console.error('Admin add worker error:', err);
     res.status(500).json({ error: 'Failed to add worker' });
