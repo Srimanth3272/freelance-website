@@ -193,19 +193,26 @@ export function AppProvider({ children }) {
   });
   const [workerApplications, setWorkerApplications] = useState([]);
 
-  // Fetch workers from backend and keep localStorage cache in sync
+  // ─── localStorage helpers ────────────────────────────────────────────────
+  const saveWorkersCache = (list) => {
+    try { localStorage.setItem('kaamwala_workers_cache', JSON.stringify(list)); } catch (_) {}
+  };
+
+  // Fetch workers from backend.
+  // IMPORTANT: Render free-tier resets the SQLite DB on every cold start.
+  // So if the server returns 0 workers but we have cached data, we keep the cache.
+  // The cache is ONLY replaced when the server returns at least 1 worker.
   const refreshWorkers = useCallback(() => {
     import('../services/api').then(({ workersAPI }) => {
       workersAPI.list().then((data) => {
-        if (data && data.workers) {
+        if (data && data.workers && data.workers.length > 0) {
+          // Server has real data — trust it and update cache
           setWorkers(data.workers);
-          try {
-            localStorage.setItem('kaamwala_workers_cache', JSON.stringify(data.workers));
-          } catch (_) {}
+          saveWorkersCache(data.workers);
         }
-      }).catch(err => {
-        console.error('Failed to fetch workers (using cache):', err);
-        // Keep whatever is already in state (loaded from cache at init)
+        // If server returns [] (DB reset after Render restart), keep cached data
+      }).catch(() => {
+        // Network error or server sleeping — keep cached data, do nothing
       });
     });
   }, []);
@@ -288,8 +295,30 @@ export function AppProvider({ children }) {
     });
   }, []);
 
-  // Admin: Add a new worker directly (persisted to backend DB)
+  // Admin: Add a new worker — always saves to localStorage regardless of server state
   const addWorker = useCallback(async (workerData) => {
+    // Build the local worker object immediately
+    const localWorker = {
+      ...workerData,
+      id: Date.now(),
+      rating: 0,
+      reviews: 0,
+      completedJobs: 0,
+      distance: Math.round(Math.random() * 10 * 10) / 10,
+      verified: true,
+      available: true,
+      portfolio: [],
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save to state + cache immediately so refresh never loses it
+    setWorkers(prev => {
+      const updated = [...prev, localWorker];
+      saveWorkersCache(updated);
+      return updated;
+    });
+
+    // Also try to save to backend in the background (non-blocking)
     try {
       const { adminAPI } = await import('../services/api');
       const data = await adminAPI.addWorker({
@@ -308,43 +337,33 @@ export function AppProvider({ children }) {
         languages: workerData.languages,
         avatar: workerData.avatar,
       });
-      if (data.worker) {
+      // If backend assigned a different ID, update our local record
+      if (data.worker && data.worker.id !== localWorker.id) {
         setWorkers(prev => {
-          const updated = [...prev, data.worker];
-          try { localStorage.setItem('kaamwala_workers_cache', JSON.stringify(updated)); } catch (_) {}
+          const updated = prev.map(w => w.id === localWorker.id ? { ...w, ...data.worker } : w);
+          saveWorkersCache(updated);
           return updated;
         });
         return data.worker;
       }
     } catch (err) {
-      console.error('Failed to add worker via API:', err);
-      // Fallback: persist locally so refresh doesn't lose it
-      const newWorker = {
-        ...workerData,
-        id: Date.now(),
-        rating: 0,
-        reviews: 0,
-        completedJobs: 0,
-        distance: Math.round(Math.random() * 10 * 10) / 10,
-        verified: true,
-        available: true,
-        portfolio: [],
-        createdAt: new Date(),
-      };
-      setWorkers(prev => {
-        const updated = [...prev, newWorker];
-        try { localStorage.setItem('kaamwala_workers_cache', JSON.stringify(updated)); } catch (_) {}
-        return updated;
-      });
-      return newWorker;
+      console.warn('Backend save failed — worker saved to localStorage only:', err.message);
     }
+    return localWorker;
   }, []);
 
-  // Admin: Update existing worker (persisted to backend DB)
+  // Admin: Update existing worker — always saves to localStorage
   const updateWorker = useCallback(async (workerId, updates) => {
+    // Apply locally first so UI feels instant
+    setWorkers(prev => {
+      const updated = prev.map(w => w.id === workerId ? { ...w, ...updates } : w);
+      saveWorkersCache(updated);
+      return updated;
+    });
+    // Try backend in background
     try {
       const { adminAPI } = await import('../services/api');
-      const data = await adminAPI.updateWorker(workerId, {
+      await adminAPI.updateWorker(workerId, {
         name: updates.name,
         phone: updates.phone,
         email: updates.email,
@@ -355,36 +374,26 @@ export function AppProvider({ children }) {
         available: updates.available,
         verified: updates.verified,
       });
-      if (data.worker) {
-        setWorkers(prev => {
-          const updated = prev.map(w => w.id === workerId ? { ...w, ...data.worker } : w);
-          try { localStorage.setItem('kaamwala_workers_cache', JSON.stringify(updated)); } catch (_) {}
-          return updated;
-        });
-      }
     } catch (err) {
-      console.error('Failed to update worker via API:', err);
-      setWorkers(prev => {
-        const updated = prev.map(w => w.id === workerId ? { ...w, ...updates } : w);
-        try { localStorage.setItem('kaamwala_workers_cache', JSON.stringify(updated)); } catch (_) {}
-        return updated;
-      });
+      console.warn('Backend update failed — saved to localStorage only:', err.message);
     }
   }, []);
 
-  // Admin: Delete worker (persisted to backend DB)
+  // Admin: Delete worker — always saves to localStorage
   const deleteWorker = useCallback(async (workerId) => {
+    // Remove locally first
+    setWorkers(prev => {
+      const updated = prev.filter(w => w.id !== workerId);
+      saveWorkersCache(updated);
+      return updated;
+    });
+    // Try backend in background
     try {
       const { adminAPI } = await import('../services/api');
       await adminAPI.deleteWorker(workerId);
     } catch (err) {
-      console.error('Failed to delete worker via API:', err);
+      console.warn('Backend delete failed — removed from localStorage only:', err.message);
     }
-    setWorkers(prev => {
-      const updated = prev.filter(w => w.id !== workerId);
-      try { localStorage.setItem('kaamwala_workers_cache', JSON.stringify(updated)); } catch (_) {}
-      return updated;
-    });
   }, []);
 
   // Worker: Submit registration application (persisted to backend DB)
