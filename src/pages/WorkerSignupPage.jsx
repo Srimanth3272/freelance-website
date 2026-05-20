@@ -1,16 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import './WorkerSignupPage.css';
 
 export default function WorkerSignupPage({ onNavigate }) {
   const { categories, submitWorkerApplication, login } = useApp();
 
-  const [mode, setMode] = useState('signup'); // signup or login
-  const [step, setStep] = useState(1); // 1: account, 2: personal, 3: professional, 4: ID verify, 5: success
-  const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const STORAGE_KEY = 'kaamwala_worker_signup_form';
+  const STEP_KEY = 'kaamwala_worker_signup_step';
 
-  const [form, setForm] = useState({
+  const defaultForm = {
     // Account
     email: '',
     password: '',
@@ -37,7 +35,42 @@ export default function WorkerSignupPage({ onNavigate }) {
     idProofType: 'aadhaar',
     idProofNumber: '',
     idProofFile: null,
+  };
+
+  const loadSavedForm = () => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return { ...defaultForm, ...parsed, idProofFile: null }; // file can't be serialized
+      }
+    } catch (e) {}
+    return defaultForm;
+  };
+
+  const [mode, setMode] = useState('signup'); // signup or login
+  const [step, setStep] = useState(() => {
+    try { return parseInt(localStorage.getItem(STEP_KEY)) || 1; } catch(e) { return 1; }
   });
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const [form, setForm] = useState(loadSavedForm);
+
+  // Auto-save form to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      const { idProofFile, ...serializableForm } = form;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(serializableForm));
+    } catch (e) {}
+  }, [form]);
+
+  // Auto-save step to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(STEP_KEY, String(step));
+    } catch (e) {}
+  }, [step]);
 
   // Login form state
   const [loginForm, setLoginForm] = useState({
@@ -84,10 +117,15 @@ export default function WorkerSignupPage({ onNavigate }) {
       });
       setLoading(false);
       setSubmitted(true);
+      // Clear saved form data after successful submission
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STEP_KEY);
     } catch (err) {
       console.error('Signup error:', err);
       setLoading(false);
       setSubmitted(true); // Still show success for UX
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STEP_KEY);
     }
   };
 

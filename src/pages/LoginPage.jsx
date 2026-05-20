@@ -1,139 +1,105 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import './LoginPage.css';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://freelance-website-4b2g.onrender.com/api';
+
 export default function LoginPage({ onNavigate, initialData = {} }) {
   const { t, login } = useApp();
-  const [step, setStep] = useState(initialData.step || 'phone'); // phone → otp → role → admin
-  const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [role, setRole] = useState('');
+  const [step, setStep] = useState(initialData.step || 'login'); // login | role | admin
   const [loading, setLoading] = useState(false);
+
+  // Login form
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  // Register form
+  const [isRegister, setIsRegister] = useState(false);
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regError, setRegError] = useState('');
+
+  // Role selection
+  const [role, setRole] = useState('');
+  const [verifiedUser, setVerifiedUser] = useState(null);
+
+  // Admin
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
 
-  const [otpError, setOtpError] = useState('');
-  const [demoSms, setDemoSms] = useState(null);
-
-  // Store server OTP for auto-fill, and verified user data for persistence
-  const serverOtpRef = useRef(null);
-  const verifiedDataRef = useRef(null);
-
-  const handleSendOTP = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
-    if (phone.length >= 10) {
-      setLoading(true);
-      setOtpError('');
-      setOtp(['', '', '', '', '', '']);
-      try {
-        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://freelance-website-4b2g.onrender.com/api';
-        const res = await fetch(`${API_BASE}/auth/login/phone`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone })
-        });
-        const data = await res.json();
-        if (res.ok) {
-          setLoading(false);
-          setStep('otp');
-          
-          // Store OTP for auto-fill and display the simulated SMS notification
-          if(data.mockOtpMessage) {
-            serverOtpRef.current = data.mockOtpMessage;
-            setDemoSms(data.mockOtpMessage);
-            setTimeout(() => setDemoSms(null), 10000);
-
-            // Auto-fill the OTP after 1.5s to simulate SMS auto-read
-            setTimeout(() => {
-              const otpDigits = data.mockOtpMessage.split('');
-              setOtp(otpDigits);
-              // Auto-verify after auto-fill
-              setTimeout(() => {
-                autoVerifyOtp(otpDigits.join(''));
-              }, 500);
-            }, 1500);
-          }
-        } else {
-          setLoading(false);
-          alert('Failed to send OTP. Is the backend running?');
-        }
-      } catch (err) {
-        setLoading(false);
-        console.error(err);
-        alert('Server error while sending OTP.');
-      }
-    }
-  };
-
-  // Auto-verify OTP without going through handleOtpChange
-  const autoVerifyOtp = async (otpString) => {
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
     setLoading(true);
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://freelance-website-4b2g.onrender.com/api';
-      const res = await fetch(`${API_BASE}/auth/login/phone`, {
+      const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, otp: otpString })
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      setLoading(false);
-      if (res.ok && data.verified) {
-        // Store token and user data for persistence
-        if (data.token) {
-          localStorage.setItem('kaamwala_token', data.token);
-          localStorage.setItem('kaamwala_user', JSON.stringify(data.user));
-        }
-        verifiedDataRef.current = data;
+      if (res.ok && data.token) {
+        localStorage.setItem('kaamwala_token', data.token);
+        localStorage.setItem('kaamwala_user', JSON.stringify(data.user));
+        setVerifiedUser(data.user);
+        setLoading(false);
         setStep('role');
       } else {
-        setOtpError(data.error || 'Invalid OTP. Please try again.');
-        setOtp(['', '', '', '', '', '']);
-        document.getElementById('otp-input-0')?.focus();
+        setLoginError(data.error || 'Invalid email or password.');
+        setLoading(false);
       }
-    } catch(err) {
+    } catch (err) {
+      console.error(err);
+      setLoginError('Cannot reach server. Please try again later.');
       setLoading(false);
-      setOtpError('Failed to verify OTP with server.');
     }
   };
 
-  const handleOtpChange = async (index, value) => {
-    if (value.length > 1) return;
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
-    setOtpError('');
-    if (value && index < 5) {
-      const nextInput = document.getElementById(`otp-input-${index + 1}`);
-      nextInput?.focus();
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setRegError('');
+    if (!regName || !regEmail || !regPassword) {
+      setRegError('All fields are required.');
+      return;
     }
-    if (newOtp.every(d => d !== '')) {
-      const enteredOtp = newOtp.join('');
-      await autoVerifyOtp(enteredOtp);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: regName, email: regEmail, phone: regPhone, password: regPassword }),
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        localStorage.setItem('kaamwala_token', data.token);
+        localStorage.setItem('kaamwala_user', JSON.stringify(data.user));
+        setVerifiedUser(data.user);
+        setLoading(false);
+        setStep('role');
+      } else {
+        setRegError(data.error || 'Registration failed. Try a different email.');
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error(err);
+      setRegError('Cannot reach server. Please try again later.');
+      setLoading(false);
     }
   };
 
   const handleSelectRole = (selectedRole) => {
     setRole(selectedRole);
     setLoading(true);
-
-    // Use verified data from OTP step if available
-    const userData = verifiedDataRef.current?.user || { name: 'User', phone };
-
+    const userData = verifiedUser || { name: 'User', email };
     setTimeout(() => {
-      login({
-        ...userData,
-        name: userData.name || 'User',
-        phone: userData.phone || phone,
-        role: selectedRole,
-      });
+      login({ ...userData, role: selectedRole });
       setLoading(false);
       onNavigate('home');
-    }, 1000);
-  };
-
-  const handleAdminGoogleLogin = () => {
-    setStep('admin');
+    }, 800);
   };
 
   const handleAdminSubmit = async (e) => {
@@ -142,30 +108,20 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
     if (adminEmail === 'sreemanthnagalakunta@gmail.com' && adminPassword === 'Srimanth@3272') {
       setLoading(true);
       try {
-        // Authenticate with backend using the server's admin credentials to get JWT token
-        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://freelance-website-4b2g.onrender.com/api';
         const res = await fetch(`${API_BASE}/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: 'admin@kaamwala.com', password: 'Admin@123' })
+          body: JSON.stringify({ email: 'admin@kaamwala.com', password: 'Admin@123' }),
         });
         const data = await res.json();
         if (res.ok && data.token) {
           localStorage.setItem('kaamwala_token', data.token);
-          localStorage.setItem('kaamwala_user', JSON.stringify({
-            ...data.user,
-            name: 'Srimanth Admin',
-            email: adminEmail,
-          }));
+          localStorage.setItem('kaamwala_user', JSON.stringify({ ...data.user, name: 'Srimanth Admin', email: adminEmail }));
         }
       } catch (err) {
         console.error('Backend admin auth failed (non-critical):', err);
       }
-      login({
-        name: 'Srimanth Admin',
-        email: adminEmail,
-        role: 'admin',
-      });
+      login({ name: 'Srimanth Admin', email: adminEmail, role: 'admin' });
       setLoading(false);
       onNavigate('admin');
     } else {
@@ -182,29 +138,6 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
         <div className="login-bg__pattern"></div>
       </div>
 
-      {/* Simulated SMS Dropdown Notification */}
-      {demoSms && (
-        <div className="demo-sms-notification animate-fadeInDown" style={{
-          position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
-          width: '90%', maxWidth: '350px', background: 'rgba(30, 30, 30, 0.95)',
-          backdropFilter: 'blur(10px)', color: '#fff', borderRadius: '12px',
-          padding: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', zIndex: 9999,
-          border: '1px solid rgba(255,255,255,0.1)', cursor: 'default'
-        }}>
-          <div style={{display: 'flex', alignItems: 'center', gap: '12px'}}>
-            <div style={{background: '#3b82f6', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem'}}>
-              💬
-            </div>
-            <div>
-              <h4 style={{margin: '0 0 4px 0', fontSize: '0.95rem', color: '#e2e8f0'}}>Messages • Now</h4>
-              <p style={{margin: 0, fontSize: '0.9rem', color: '#94a3b8', lineHeight: '1.3'}}>
-                Your KaamWala verification OTP is <strong>{demoSms}</strong>
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="login-card animate-scaleIn">
         <div className="login-card__header">
           <button className="login-card__logo" onClick={() => onNavigate('home')}>
@@ -213,99 +146,159 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
           </button>
         </div>
 
-        {/* Step: Phone */}
-        {step === 'phone' && (
+        {/* Step: Login / Register */}
+        {step === 'login' && (
           <div className="login-step animate-fadeInUp">
-            <div className="login-step__icon">📱</div>
-            <h2 className="login-step__title">{t('login')}</h2>
-            <p className="login-step__subtitle">{t('enterMobile')}</p>
+            <div className="login-step__icon">{isRegister ? '📝' : '🔐'}</div>
+            <h2 className="login-step__title">{isRegister ? 'Create Account' : t('login')}</h2>
+            <p className="login-step__subtitle">
+              {isRegister ? 'Register to access KaamWala' : 'Sign in with your email & password'}
+            </p>
 
-            <form onSubmit={handleSendOTP} className="login-form">
-              <div className="login-form__phone-input">
-                <span className="login-form__country">🇮🇳 +91</span>
-                <input
-                  type="tel"
-                  maxLength={10}
-                  placeholder="98765 43210"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                  className="login-form__input"
-                  id="phone-input"
-                  autoFocus
-                />
-              </div>
-
+            {/* Toggle tabs */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', background: '#f1f5f9', borderRadius: '10px', padding: '4px' }}>
               <button
-                type="submit"
-                className={`login-form__btn ${loading ? 'login-form__btn--loading' : ''}`}
-                disabled={phone.length < 10 || loading}
-                id="send-otp-btn"
+                onClick={() => { setIsRegister(false); setLoginError(''); setRegError(''); }}
+                style={{
+                  flex: 1, padding: '8px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
+                  background: !isRegister ? '#f97316' : 'transparent', color: !isRegister ? '#fff' : '#64748b', transition: 'all 0.2s'
+                }}
               >
-                {loading ? (
-                  <span className="login-form__spinner"></span>
-                ) : (
-                  t('sendOTP')
-                )}
+                Login
               </button>
-            </form>
+              <button
+                onClick={() => { setIsRegister(true); setLoginError(''); setRegError(''); }}
+                style={{
+                  flex: 1, padding: '8px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
+                  background: isRegister ? '#f97316' : 'transparent', color: isRegister ? '#fff' : '#64748b', transition: 'all 0.2s'
+                }}
+              >
+                Register
+              </button>
+            </div>
+
+            {/* LOGIN FORM */}
+            {!isRegister && (
+              <form onSubmit={handleLogin} className="login-form">
+                {loginError && (
+                  <div style={{ background: '#fee2e2', color: '#dc2626', borderRadius: '8px', padding: '10px 14px', marginBottom: '14px', fontSize: '0.88rem', border: '1px solid #fca5a5' }}>
+                    ⚠️ {loginError}
+                  </div>
+                )}
+                <div className="login-form__phone-input" style={{ marginBottom: '14px', flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="login-form__input"
+                    id="login-email"
+                    required
+                    autoFocus
+                    style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', padding: '4px 0' }}
+                  />
+                </div>
+                <div className="login-form__phone-input" style={{ marginBottom: '18px', flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="login-form__input"
+                    id="login-password"
+                    required
+                    style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', padding: '4px 0' }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className={`login-form__btn ${loading ? 'login-form__btn--loading' : ''}`}
+                  disabled={loading}
+                  id="login-submit-btn"
+                >
+                  {loading ? <span className="login-form__spinner"></span> : '🔓 Login'}
+                </button>
+              </form>
+            )}
+
+            {/* REGISTER FORM */}
+            {isRegister && (
+              <form onSubmit={handleRegister} className="login-form">
+                {regError && (
+                  <div style={{ background: '#fee2e2', color: '#dc2626', borderRadius: '8px', padding: '10px 14px', marginBottom: '14px', fontSize: '0.88rem', border: '1px solid #fca5a5' }}>
+                    ⚠️ {regError}
+                  </div>
+                )}
+                <div className="login-form__phone-input" style={{ marginBottom: '12px', flexDirection: 'column', alignItems: 'stretch' }}>
+                  <input
+                    type="text"
+                    placeholder="Full Name"
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                    className="login-form__input"
+                    id="reg-name"
+                    required
+                    autoFocus
+                    style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', padding: '4px 0' }}
+                  />
+                </div>
+                <div className="login-form__phone-input" style={{ marginBottom: '12px', flexDirection: 'column', alignItems: 'stretch' }}>
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    className="login-form__input"
+                    id="reg-email"
+                    required
+                    style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', padding: '4px 0' }}
+                  />
+                </div>
+                <div className="login-form__phone-input" style={{ marginBottom: '12px', flexDirection: 'column', alignItems: 'stretch' }}>
+                  <input
+                    type="tel"
+                    placeholder="Phone (optional)"
+                    value={regPhone}
+                    maxLength={10}
+                    onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, ''))}
+                    className="login-form__input"
+                    id="reg-phone"
+                    style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', padding: '4px 0' }}
+                  />
+                </div>
+                <div className="login-form__phone-input" style={{ marginBottom: '18px', flexDirection: 'column', alignItems: 'stretch' }}>
+                  <input
+                    type="password"
+                    placeholder="Create Password"
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    className="login-form__input"
+                    id="reg-password"
+                    required
+                    style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', padding: '4px 0' }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className={`login-form__btn ${loading ? 'login-form__btn--loading' : ''}`}
+                  disabled={loading}
+                  id="register-submit-btn"
+                >
+                  {loading ? <span className="login-form__spinner"></span> : '📝 Create Account'}
+                </button>
+              </form>
+            )}
 
             <div className="login-divider">
               <span>{t('orContinueWith')}</span>
             </div>
 
             <div className="login-social">
-              <button className="login-social__btn" id="google-login-btn" onClick={handleAdminGoogleLogin}>
+              <button className="login-social__btn" id="google-login-btn" onClick={() => setStep('admin')}>
                 <span>🛡️</span>
                 Admin Portal
               </button>
             </div>
-          </div>
-        )}
-
-        {/* Step: OTP */}
-        {step === 'otp' && (
-          <div className="login-step animate-fadeInUp">
-            <div className="login-step__icon">🔐</div>
-            <h2 className="login-step__title">{t('enterOTP')}</h2>
-            <p className="login-step__subtitle">We sent a 6-digit code to +91 {phone}</p>
-
-            <div className="otp-inputs">
-              {otp.map((digit, idx) => (
-                <input
-                  key={idx}
-                  type="text"
-                  maxLength={1}
-                  value={digit}
-                  onChange={(e) => handleOtpChange(idx, e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Backspace' && !digit && idx > 0) {
-                      document.getElementById(`otp-input-${idx - 1}`)?.focus();
-                    }
-                  }}
-                  className={`otp-input ${otpError ? 'otp-input--error' : ''}`}
-                  style={otpError ? { borderColor: 'red' } : {}}
-                  id={`otp-input-${idx}`}
-                  autoFocus={idx === 0}
-                />
-              ))}
-            </div>
-
-            {otpError && <div style={{ color: 'red', marginTop: '10px', textAlign: 'center', fontSize: '0.9rem' }}>{otpError}</div>}
-
-            {loading && (
-              <div className="login-loading">
-                <span className="login-form__spinner"></span>
-                <span>Verifying...</span>
-              </div>
-            )}
-
-            <button className="login-resend" id="resend-otp-btn" onClick={handleSendOTP} disabled={loading}>
-              Didn't receive? <strong>Resend OTP</strong>
-            </button>
-
-            <button className="login-back" onClick={() => setStep('phone')} id="back-to-phone-btn">
-              ← Change number
-            </button>
           </div>
         )}
 
@@ -352,28 +345,28 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
             <p className="login-step__subtitle">Secure access for administrators only</p>
 
             <form onSubmit={handleAdminSubmit} className="login-form">
-              {adminError && <div className="login-error" style={{color: 'red', marginBottom: '10px'}}>{adminError}</div>}
-              
-              <div className="login-form__phone-input" style={{marginBottom: '15px'}}>
+              {adminError && <div className="login-error" style={{ color: 'red', marginBottom: '10px' }}>{adminError}</div>}
+
+              <div className="login-form__phone-input" style={{ marginBottom: '15px' }}>
                 <input
                   type="email"
                   placeholder="Admin Email"
                   value={adminEmail}
                   onChange={(e) => setAdminEmail(e.target.value)}
                   className="login-form__input"
-                  style={{width: '100%', border: 'none', outline: 'none', background: 'transparent'}}
+                  style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent' }}
                   required
                 />
               </div>
 
-              <div className="login-form__phone-input" style={{marginBottom: '20px'}}>
+              <div className="login-form__phone-input" style={{ marginBottom: '20px' }}>
                 <input
                   type="password"
                   placeholder="Password"
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
                   className="login-form__input"
-                  style={{width: '100%', border: 'none', outline: 'none', background: 'transparent'}}
+                  style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent' }}
                   required
                 />
               </div>
@@ -387,7 +380,7 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
               </button>
             </form>
 
-            <button className="login-back" onClick={() => setStep('phone')} style={{marginTop: '20px'}}>
+            <button className="login-back" onClick={() => setStep('login')} style={{ marginTop: '20px' }}>
               ← Back to main login
             </button>
           </div>
@@ -395,8 +388,8 @@ export default function LoginPage({ onNavigate, initialData = {} }) {
 
         {/* Steps indicator */}
         <div className="login-steps-indicator">
-          {['phone', 'otp', 'role'].map((s, idx) => (
-            <div key={s} className={`login-steps-dot ${step === s ? 'login-steps-dot--active' : ''} ${['phone','otp','role'].indexOf(step) > idx ? 'login-steps-dot--completed' : ''}`}></div>
+          {['login', 'role'].map((s, idx) => (
+            <div key={s} className={`login-steps-dot ${step === s ? 'login-steps-dot--active' : ''} ${['login', 'role'].indexOf(step) > idx ? 'login-steps-dot--completed' : ''}`}></div>
           ))}
         </div>
       </div>
