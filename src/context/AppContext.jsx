@@ -184,19 +184,28 @@ export function AppProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [bookings, setBookings] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
-  const [workers, setWorkers] = useState([]);
+  // Load cached workers from localStorage so list persists on page refresh
+  const [workers, setWorkers] = useState(() => {
+    try {
+      const cached = localStorage.getItem('kaamwala_workers_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch (_) { return []; }
+  });
   const [workerApplications, setWorkerApplications] = useState([]);
 
-  // Fetch workers from backend
+  // Fetch workers from backend and keep localStorage cache in sync
   const refreshWorkers = useCallback(() => {
     import('../services/api').then(({ workersAPI }) => {
       workersAPI.list().then((data) => {
         if (data && data.workers) {
           setWorkers(data.workers);
+          try {
+            localStorage.setItem('kaamwala_workers_cache', JSON.stringify(data.workers));
+          } catch (_) {}
         }
       }).catch(err => {
-        console.error('Failed to fetch workers:', err);
-        setWorkers(MOCK_WORKERS);
+        console.error('Failed to fetch workers (using cache):', err);
+        // Keep whatever is already in state (loaded from cache at init)
       });
     });
   }, []);
@@ -300,12 +309,16 @@ export function AppProvider({ children }) {
         avatar: workerData.avatar,
       });
       if (data.worker) {
-        setWorkers(prev => [...prev, data.worker]);
+        setWorkers(prev => {
+          const updated = [...prev, data.worker];
+          try { localStorage.setItem('kaamwala_workers_cache', JSON.stringify(updated)); } catch (_) {}
+          return updated;
+        });
         return data.worker;
       }
     } catch (err) {
       console.error('Failed to add worker via API:', err);
-      // Fallback to local state only
+      // Fallback: persist locally so refresh doesn't lose it
       const newWorker = {
         ...workerData,
         id: Date.now(),
@@ -318,7 +331,11 @@ export function AppProvider({ children }) {
         portfolio: [],
         createdAt: new Date(),
       };
-      setWorkers(prev => [...prev, newWorker]);
+      setWorkers(prev => {
+        const updated = [...prev, newWorker];
+        try { localStorage.setItem('kaamwala_workers_cache', JSON.stringify(updated)); } catch (_) {}
+        return updated;
+      });
       return newWorker;
     }
   }, []);
@@ -339,11 +356,19 @@ export function AppProvider({ children }) {
         verified: updates.verified,
       });
       if (data.worker) {
-        setWorkers(prev => prev.map(w => w.id === workerId ? { ...w, ...data.worker } : w));
+        setWorkers(prev => {
+          const updated = prev.map(w => w.id === workerId ? { ...w, ...data.worker } : w);
+          try { localStorage.setItem('kaamwala_workers_cache', JSON.stringify(updated)); } catch (_) {}
+          return updated;
+        });
       }
     } catch (err) {
       console.error('Failed to update worker via API:', err);
-      setWorkers(prev => prev.map(w => w.id === workerId ? { ...w, ...updates } : w));
+      setWorkers(prev => {
+        const updated = prev.map(w => w.id === workerId ? { ...w, ...updates } : w);
+        try { localStorage.setItem('kaamwala_workers_cache', JSON.stringify(updated)); } catch (_) {}
+        return updated;
+      });
     }
   }, []);
 
@@ -352,11 +377,14 @@ export function AppProvider({ children }) {
     try {
       const { adminAPI } = await import('../services/api');
       await adminAPI.deleteWorker(workerId);
-      setWorkers(prev => prev.filter(w => w.id !== workerId));
     } catch (err) {
       console.error('Failed to delete worker via API:', err);
-      setWorkers(prev => prev.filter(w => w.id !== workerId));
     }
+    setWorkers(prev => {
+      const updated = prev.filter(w => w.id !== workerId);
+      try { localStorage.setItem('kaamwala_workers_cache', JSON.stringify(updated)); } catch (_) {}
+      return updated;
+    });
   }, []);
 
   // Worker: Submit registration application (persisted to backend DB)

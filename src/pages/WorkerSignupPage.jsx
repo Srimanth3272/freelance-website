@@ -193,9 +193,9 @@ export default function WorkerSignupPage({ onNavigate }) {
       <div className="wsignup-container">
         {/* Left Panel - Branding */}
         <div className="wsignup-brand animate-fadeInUp">
-          <button className="wsignup-brand__logo" onClick={() => onNavigate('home')}>
+          <div className="wsignup-brand__logo" style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'20px',fontSize:'1.4rem',fontWeight:700,color:'#fff'}}>
             <span>🏠</span> KaamWala
-          </button>
+          </div>
           <h1 className="wsignup-brand__title">Join as a <span>Professional Worker</span></h1>
           <p className="wsignup-brand__desc">
             Register your skills, get verified, and start receiving bookings from customers near you. Earn on your own terms!
@@ -228,77 +228,11 @@ export default function WorkerSignupPage({ onNavigate }) {
 
         {/* Right Panel - Form */}
         <div className="wsignup-card animate-scaleIn">
-          {/* Mode Toggle */}
-          <div className="wsignup-mode-toggle">
-            <button
-              className={`wsignup-mode-btn ${mode === 'signup' ? 'wsignup-mode-btn--active' : ''}`}
-              onClick={() => setMode('signup')}
-              id="worker-signup-tab"
-            >
-              Sign Up
-            </button>
-            <button
-              className={`wsignup-mode-btn ${mode === 'login' ? 'wsignup-mode-btn--active' : ''}`}
-              onClick={() => setMode('login')}
-              id="worker-login-tab"
-            >
-              Login
-            </button>
+          {/* Registration heading */}
+          <div style={{textAlign:'center',marginBottom:'20px'}}>
+            <h2 style={{margin:0,fontSize:'1.3rem',fontWeight:700,color:'#1e293b'}}>📝 Worker Registration</h2>
+            <p style={{margin:'6px 0 0',fontSize:'0.88rem',color:'#64748b'}}>Complete all steps to register as a professional worker</p>
           </div>
-
-          {/* LOGIN MODE */}
-          {mode === 'login' && (
-            <form onSubmit={handleLogin} className="wsignup-login animate-fadeInUp">
-              <div className="wsignup-login__icon">🔐</div>
-              <h2>Worker Login</h2>
-              <p>Access your dashboard, manage bookings, and update your profile</p>
-
-              <div className="wsignup-form-group">
-                <label>✉️ Email Address</label>
-                <input
-                  type="email"
-                  placeholder="yourname@email.com"
-                  value={loginForm.email}
-                  onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
-                  className="wsignup-form-input"
-                  required
-                  id="worker-login-email"
-                />
-              </div>
-
-              <div className="wsignup-form-group">
-                <label>🔒 Password</label>
-                <input
-                  type="password"
-                  placeholder="Enter your password"
-                  value={loginForm.password}
-                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                  className="wsignup-form-input"
-                  required
-                  id="worker-login-password"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className={`wsignup-submit-btn ${loading ? 'wsignup-submit-btn--loading' : ''}`}
-                disabled={loading}
-                id="worker-login-submit"
-              >
-                {loading ? <><span className="wsignup-spinner"></span> Logging in...</> : 'Login →'}
-              </button>
-
-              <div className="wsignup-login__links">
-                <button type="button" className="wsignup-link">Forgot Password?</button>
-                <button type="button" className="wsignup-link" onClick={() => setMode('signup')}>
-                  Don't have an account? Sign Up
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* SIGNUP MODE */}
-          {mode === 'signup' && (
             <div className="wsignup-signup">
               {/* Step Progress */}
               <div className="wsignup-steps">
@@ -691,7 +625,6 @@ export default function WorkerSignupPage({ onNavigate }) {
                 )}
               </div>
             </div>
-          )}
         </div>
       </div>
     </div>
